@@ -278,17 +278,37 @@ function App() {
   }, [restartSpeechRecognition]);
 
   const updateRemoteSubtitle = useCallback(async (newText: string, sourceLang: string, isFinal?: boolean) => {
-    console.log('📨 Karşı taraf yeni metin geldi:', newText, 'Final:', isFinal);
+    console.log('📨 Karşı taraf yeni metin geldi:', `"${newText}"`, 'Final:', isFinal, 'Uzunluk:', newText.length);
+    console.log('📨 Önceki metin:', `"${remotePreviousText.current}"`, 'Uzunluk:', remotePreviousText.current.length);
     
-    // Final mesajları öncelikli olarak işle
+    // Metin uzunluğu kontrolü - yeni metin öncekinden kısa ise (kelime eksikse) işleme
+    const isTextShorter = newText.length < remotePreviousText.current.length;
+    const isSameText = newText === remotePreviousText.current;
+    const isTextLonger = newText.length > remotePreviousText.current.length;
+    
+    console.log('📊 Metin analizi:', { isSameText, isTextShorter, isTextLonger, isFinal });
+    
+    // Final mesajları her zaman işle
     if (isFinal) {
-      console.log('🎯 Final metin işleniyor:', newText);
-      // Final metin geldiğinde kesinlikle işle
+      console.log('🎯 Final metin işleniyor:', `"${newText}"`);
     } else {
-      // Interim mesajlarda aynı metin kontrolü yap
-      if (newText === remotePreviousText.current) {
-        console.log('🔄 Karşı taraf aynı interim metin tekrar geldi, işlenmiyor');
+      // Interim mesajlarda: sadece tam aynı metin ise skip et (kısalma veya uzama varsa işle)
+      if (isSameText) {
+        console.log('🔄 Karşı taraf aynı metin tekrar geldi, işlenmiyor');
         return;
+      }
+      
+      // Eğer metin kısaldıysa uyar ama yine de işle
+      if (isTextShorter) {
+        console.log('⚠️ SORUN: Metin kısaldı! Bu normalmi?');
+        console.log('⚠️ Önceki:', `"${remotePreviousText.current}" (${remotePreviousText.current.length} karakter)`);
+        console.log('⚠️ Yeni:', `"${newText}" (${newText.length} karakter)`);
+        
+        // Kısa metin gelirse, en uzun olanı tercih et (son tam mesajı koru)
+        if (remotePreviousText.current.length > newText.length && remotePreviousText.current.includes(newText)) {
+          console.log('🚫 Kısa metin skip ediliyor, önceki daha uzun ve bu metni içeriyor');
+          return;
+        }
       }
     }
     
@@ -297,11 +317,11 @@ function App() {
     remotePreviousText.current = newText;
     remoteLastUpdateTime.current = Date.now();
     
-    console.log('✅ Karşı taraf altyazısı güncelleniyor:', newText);
+    console.log('✅ Karşı taraf altyazısı güncelleniyor:', `"${newText}"`);
     
     try {
       const translatedText = await translateText(newText, sourceLang, selectedLanguage);
-      console.log('🌍 Çevrilmiş metin:', translatedText);
+      console.log('🌍 Çevrilmiş metin:', `"${translatedText}" (${translatedText.length} karakter)`);
       
       // Çevrilmiş metni göster
       const displayText = getLastNWords(translatedText);
@@ -430,6 +450,7 @@ function App() {
           
           if (dataConnection && dataConnection.open) {
             console.log('📤 Final veri gönderiliyor:', finalTranscript);
+            console.log('📤 Final veri uzunluğu:', finalTranscript.length, 'kelime sayısı:', finalTranscript.split(' ').length);
             dataConnection.send({
               type: 'subtitle',
               text: finalTranscript,
@@ -443,6 +464,8 @@ function App() {
           
           if (dataConnection && dataConnection.open) {
             console.log('📤 Interim veri gönderiliyor:', textToSend);
+            console.log('📤 Interim veri uzunluğu:', textToSend.length, 'kelime sayısı:', textToSend.split(' ').length);
+            console.log('📤 LastFinal:', lastFinalText.current, 'Interim:', interimTranscript);
             dataConnection.send({
               type: 'subtitle',
               text: textToSend,
