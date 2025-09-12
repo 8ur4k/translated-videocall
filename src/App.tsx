@@ -101,19 +101,212 @@ function App() {
   const localStreamRef = useRef<MediaStream | null>(null);
   const isRecognitionStarting = useRef<boolean>(false);
   const abortedCount = useRef<number>(0);
+  
+  // Altyazı zamanlama ref'leri
+  const mySubtitleTimer = useRef<NodeJS.Timeout | null>(null);
+  const remoteSubtitleTimer = useRef<NodeJS.Timeout | null>(null);
+  const myCurrentText = useRef<string>('');
+  const remoteCurrentText = useRef<string>('');
+  const myLastUpdateTime = useRef<number>(0);
+  const remoteLastUpdateTime = useRef<number>(0);
+  const myPreviousText = useRef<string>(''); // Önceki metni takip et
+  const remotePreviousText = useRef<string>('');
+
+  // SpeechRecognition yeniden başlatma fonksiyonu
+  const restartSpeechRecognition = useCallback(() => {
+    if (recognitionRef.current && speechEnabled && isConnected) {
+      console.log('🔄 SpeechRecognition yeniden başlatılıyor...');
+      try {
+        recognitionRef.current.stop();
+        setTimeout(() => {
+          if (speechEnabled && isConnected) {
+            // Yeni recognition oluştur
+            const newPeer = peer;
+            if (newPeer) {
+              // startSpeechRecognition'ı çağırmak yerine doğrudan yeni recognition oluştur
+              if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                console.error('Speech recognition desteklenmiyor');
+                return;
+              }
+
+              isRecognitionStarting.current = true;
+              console.log('Yeni recognition oluşturuluyor...');
+
+              const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+              const recognition = new SpeechRecognition();
+              
+              recognition.continuous = true;
+              recognition.interimResults = true;
+              recognition.maxAlternatives = 1;
+              
+              const lang = selectedLanguage === 'tr' ? 'tr-TR' : 
+                           selectedLanguage === 'en' ? 'en-US' :
+                           selectedLanguage === 'es' ? 'es-ES' :
+                           selectedLanguage === 'fr' ? 'fr-FR' :
+                           selectedLanguage === 'de' ? 'de-DE' :
+                           selectedLanguage === 'it' ? 'it-IT' :
+                           selectedLanguage === 'pt' ? 'pt-BR' :
+                           selectedLanguage === 'ru' ? 'ru-RU' :
+                           selectedLanguage === 'ja' ? 'ja-JP' :
+                           selectedLanguage === 'ko' ? 'ko-KR' :
+                           selectedLanguage === 'zh' ? 'zh-CN' :
+                           selectedLanguage === 'ar' ? 'ar-SA' : 'tr-TR';
+              
+              recognition.lang = lang;
+              
+              recognition.onstart = () => {
+                isRecognitionStarting.current = false;
+                console.log('✅ Yeni Speech recognition başladı');
+              };
+
+              recognition.onresult = (event: any) => {
+                let fullTranscript = '';
+                for (let i = 0; i < event.results.length; i++) {
+                  const result = event.results[i];
+                  fullTranscript += result[0].transcript;
+                }
+                
+                if (fullTranscript.trim()) {
+                  updateMySubtitle(fullTranscript);
+                  
+                  if (dataConnection && dataConnection.open) {
+                    dataConnection.send({
+                      type: 'subtitle',
+                      text: fullTranscript,
+                      language: selectedLanguage
+                    });
+                  }
+                }
+              };
+
+              recognition.onerror = (event: any) => {
+                isRecognitionStarting.current = false;
+                if (event.error !== 'aborted') {
+                  console.error('Speech recognition hatası:', event.error);
+                }
+              };
+
+              recognition.onend = () => {
+                isRecognitionStarting.current = false;
+                if (isConnected && speechEnabled && recognitionRef.current === recognition) {
+                  setTimeout(() => {
+                    if (isConnected && speechEnabled && !isRecognitionStarting.current && recognitionRef.current === recognition) {
+                      try {
+                        recognition.start();
+                        isRecognitionStarting.current = true;
+                      } catch (error) {
+                        console.error('❌ Hızlı yeniden başlatma hatası:', error);
+                      }
+                    }
+                  }, 100);
+                }
+              };
+
+              recognitionRef.current = recognition;
+              
+              try {
+                recognition.start();
+              } catch (error) {
+                console.error('❌ Recognition başlatma hatası:', error);
+                recognitionRef.current = null;
+                isRecognitionStarting.current = false;
+              }
+            }
+          }
+        }, 200);
+      } catch (error) {
+        console.error('SpeechRecognition yeniden başlatma hatası:', error);
+      }
+    }
+  }, [speechEnabled, isConnected, selectedLanguage, dataConnection, peer]);
+
+  // Basit altyazı yönetim fonksiyonu
+  const updateMySubtitle = useCallback((newText: string) => {
+    console.log('📝 Yeni metin geldi:', newText);
+    
+    // Eğer yeni metin önceki metinle aynı ise (tekrar), işleme
+    if (newText === myPreviousText.current) {
+      console.log('🔄 Aynı metin tekrar geldi, işlenmiyor');
+      return;
+    }
+    
+    // Her zaman yeni metni olduğu gibi göster (SpeechRecognition zaten birikimli veriyor)
+    myCurrentText.current = newText;
+    myPreviousText.current = newText;
+    myLastUpdateTime.current = Date.now();
+    
+    console.log('✅ Altyazı güncellendi:', newText);
+    
+    // Metni göster
+    const displayText = getLastNWords(myCurrentText.current);
+    setMySubtitle(displayText);
+    
+    // Mevcut timer'ı temizle
+    if (mySubtitleTimer.current) {
+      clearTimeout(mySubtitleTimer.current);
+    }
+    
+    // 5 saniye sonra altyazıyı kaldır ve SpeechRecognition'ı yeniden başlat
+    mySubtitleTimer.current = setTimeout(() => {
+      console.log('🫥 5 saniye sessizlik - altyazı kayboldu, SpeechRecognition yeniden başlatılıyor');
+      setMySubtitle('');
+      myCurrentText.current = '';
+      myPreviousText.current = '';
+      myLastUpdateTime.current = 0;
+      
+      // SpeechRecognition'ı yeniden başlat (hafızasını temizlemek için)
+      restartSpeechRecognition();
+    }, 5000);
+  }, [restartSpeechRecognition]);
+
+  const updateRemoteSubtitle = useCallback(async (newText: string, sourceLang: string) => {
+    console.log('📨 Karşı taraf yeni metin geldi:', newText);
+    
+    // Eğer yeni metin önceki metinle aynı ise (tekrar), işleme
+    if (newText === remotePreviousText.current) {
+      console.log('🔄 Karşı taraf aynı metin tekrar geldi, işlenmiyor');
+      return;
+    }
+    
+    // Her zaman yeni metni olduğu gibi çevir (karşı taraftan gelen zaten birikimli)
+    remoteCurrentText.current = newText;
+    remotePreviousText.current = newText;
+    remoteLastUpdateTime.current = Date.now();
+    
+    console.log('✅ Karşı taraf altyazısı güncelleniyor:', newText);
+    
+    try {
+      const translatedText = await translateText(newText, sourceLang, selectedLanguage);
+      console.log('🌍 Çevrilmiş metin:', translatedText);
+      
+      // Çevrilmiş metni göster
+      const displayText = getLastNWords(translatedText);
+      setRemoteSubtitle(displayText);
+      
+      // Mevcut timer'ı temizle
+      if (remoteSubtitleTimer.current) {
+        clearTimeout(remoteSubtitleTimer.current);
+      }
+      
+      // 5 saniye sonra altyazıyı kaldır
+      remoteSubtitleTimer.current = setTimeout(() => {
+        console.log('🫥 Karşı taraf 5 saniye sessizlik - altyazı kayboldu');
+        setRemoteSubtitle('');
+        remoteCurrentText.current = '';
+        remotePreviousText.current = '';
+        remoteLastUpdateTime.current = 0;
+      }, 5000);
+    } catch (error) {
+      console.error('Çeviri hatası:', error);
+      setRemoteSubtitle(getLastNWords(newText));
+    }
+  }, [selectedLanguage]);
 
   // Callback fonksiyonları
   const handleIncomingSubtitle = useCallback(async (text: string, sourceLang: string) => {
-    console.log('Gelen metin:', text, 'Kaynak dil:', sourceLang, 'Hedef dil:', selectedLanguage);
-    try {
-      const translatedText = await translateText(text, sourceLang, selectedLanguage);
-      console.log('Çevrilmiş metin:', translatedText);
-      setRemoteSubtitle(getLastNWords(translatedText));
-    } catch (error) {
-      console.error('Çeviri hatası:', error);
-      setRemoteSubtitle(getLastNWords(text));
-    }
-  }, [selectedLanguage]);
+    console.log('📨 Gelen metin:', text, 'Kaynak dil:', sourceLang, 'Hedef dil:', selectedLanguage);
+    updateRemoteSubtitle(text, sourceLang);
+  }, [selectedLanguage, updateRemoteSubtitle]);
 
   const startSpeechRecognition = useCallback(() => {
     // Eğer zaten başlatma işlemi devam ediyorsa, bekle
@@ -143,9 +336,9 @@ function App() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
     
-    // Daha basit ayarlar deneyelim
-    recognition.continuous = false; // Sürekli değil, tek seferde
-    recognition.interimResults = true;
+    // Sürekli dinleme için ayarlar
+    recognition.continuous = true; // Sürekli dinle, durma
+    recognition.interimResults = true; // Ara sonuçları da al
     recognition.maxAlternatives = 1;
     
     const lang = selectedLanguage === 'tr' ? 'tr-TR' : 
@@ -170,29 +363,34 @@ function App() {
     };
 
     recognition.onresult = (event: any) => {
-      console.log('🎤 onresult tetiklendi, event:', event);
-      let transcript = '';
-      let isFinal = false;
+      console.log('🎤 onresult tetiklendi, results:', event.results.length);
+      
+      // Tüm sonuçları birleştir (hem interim hem final)
+      let fullTranscript = '';
+      let hasNewFinal = false;
       
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
-        transcript += result[0].transcript;
-        if (result.isFinal) {
-          isFinal = true;
+        fullTranscript += result[0].transcript;
+        
+        // Yeni final sonuç var mı kontrol et
+        if (result.isFinal && i >= event.results.length - 1) {
+          hasNewFinal = true;
         }
       }
       
-      console.log('🗣️ Konuşma algılandı:', transcript, 'Final:', isFinal);
+      console.log('🗣️ Tam metin:', fullTranscript, 'Yeni final:', hasNewFinal);
       
-      if (transcript.trim()) {
-        setMySubtitle(getLastNWords(transcript));
+      if (fullTranscript.trim()) {
+        // Her zaman güncel metni göster (interim + final)
+        updateMySubtitle(fullTranscript);
         
-        // Veriyi karşı tarafa gönder
+        // Veriyi karşı tarafa sürekli gönder (gerçek zamanlı)
         if (dataConnection && dataConnection.open) {
-          console.log('📤 Veri gönderiliyor:', transcript);
+          console.log('📤 Veri gönderiliyor:', fullTranscript);
           dataConnection.send({
             type: 'subtitle',
-            text: transcript,
+            text: fullTranscript,
             language: selectedLanguage
           });
         } else {
@@ -233,20 +431,25 @@ function App() {
 
     recognition.onend = () => {
       isRecognitionStarting.current = false;
-      console.log('🔚 Speech recognition sona erdi');
+      console.log('🔚 Speech recognition sona erdi - hemen yeniden başlatılacak');
       
-      // Sadece bağlı durumda, speech enabled ve recognition hala aktifse yeniden başlat
+      // Sürekli çalışması için hemen yeniden başlat
       if (isConnected && speechEnabled && recognitionRef.current === recognition) {
-        console.log('🔄 3 saniye sonra yeniden başlatılacak...');
+        console.log('🔄 Hemen yeniden başlatılıyor...');
         setTimeout(() => {
           // Çift kontrol: hala bağlı mı, speech enabled mı ve recognition temizlenmemiş mi?
           if (isConnected && speechEnabled && !isRecognitionStarting.current && recognitionRef.current === recognition) {
-            console.log('🔄 Yeniden başlatılıyor...');
-            startSpeechRecognition();
+            console.log('🚀 Hızlı yeniden başlatma...');
+            try {
+              recognition.start();
+              isRecognitionStarting.current = true;
+            } catch (error) {
+              console.error('❌ Hızlı yeniden başlatma hatası:', error);
+            }
           } else {
             console.log('🚫 Yeniden başlatma iptal edildi - koşullar sağlanmıyor');
           }
-        }, 3000);
+        }, 100); // Çok kısa gecikme - kesinti olmasın
       } else {
         console.log('🚫 Yeniden başlatılmayacak - bağlantı yok, speech disabled veya recognition değişti');
       }
@@ -270,7 +473,7 @@ function App() {
       recognitionRef.current = null;
       isRecognitionStarting.current = false;
     }
-  }, [selectedLanguage, dataConnection, isConnected]);
+  }, [selectedLanguage, dataConnection, isConnected, speechEnabled, updateMySubtitle]);
 
   const stopSpeechRecognition = useCallback(() => {
     isRecognitionStarting.current = false;
@@ -345,6 +548,14 @@ function App() {
     return () => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
+      }
+      
+      // Timer'ları temizle
+      if (mySubtitleTimer.current) {
+        clearTimeout(mySubtitleTimer.current);
+      }
+      if (remoteSubtitleTimer.current) {
+        clearTimeout(remoteSubtitleTimer.current);
       }
     };
   }, []);
@@ -463,6 +674,24 @@ function App() {
     setIsConnected(false);
     setMySubtitle('');
     setRemoteSubtitle('');
+    
+    // Timer'ları temizle
+    if (mySubtitleTimer.current) {
+      clearTimeout(mySubtitleTimer.current);
+      mySubtitleTimer.current = null;
+    }
+    if (remoteSubtitleTimer.current) {
+      clearTimeout(remoteSubtitleTimer.current);
+      remoteSubtitleTimer.current = null;
+    }
+    
+    // Metin ref'lerini temizle
+    myCurrentText.current = '';
+    remoteCurrentText.current = '';
+    myPreviousText.current = '';
+    remotePreviousText.current = '';
+    myLastUpdateTime.current = 0;
+    remoteLastUpdateTime.current = 0;
     
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
