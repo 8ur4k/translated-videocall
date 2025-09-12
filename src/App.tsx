@@ -568,15 +568,54 @@ function App() {
 
   // Peer bağlantısını başlat (sadece component mount'ta)
   useEffect(() => {
-    const newPeer = new Peer(generateId());
+    const newPeer = new Peer(generateId(), {
+      config: {
+        iceServers: [
+          {
+            urls: [
+              'stun:stun1.l.google.com:19302',
+              'stun:stun2.l.google.com:19302',
+              'stun:stun3.l.google.com:19302',
+              'stun:stun4.l.google.com:19302',
+            ]
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
+        ]
+      },
+      debug: 2
+    });
     setPeer(newPeer);
 
     newPeer.on('open', (id) => {
+      console.log('🌐 Peer bağlantısı açıldı, ID:', id);
       setMyId(id);
     });
 
     newPeer.on('call', (call) => {
+      console.log('📞 Gelen arama:', call.peer);
       setIncomingCall(call);
+    });
+
+    newPeer.on('error', (error) => {
+      console.error('❌ Peer hatası:', error);
+    });
+
+    newPeer.on('disconnected', () => {
+      console.log('🔌 Peer bağlantısı kesildi');
     });
 
     newPeer.on('connection', (conn) => {
@@ -692,6 +731,8 @@ function App() {
     setCurrentCall(call);
 
     call.on('stream', (remoteStream) => {
+      console.log('🎥 Karşı taraftan stream geldi:', remoteStream);
+      console.log('🎥 Stream tracks:', remoteStream.getTracks());
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
@@ -759,6 +800,8 @@ function App() {
     setCurrentCall(incomingCall);
 
     incomingCall.on('stream', (remoteStream) => {
+      console.log('🎥 Gelen aramadan stream geldi:', remoteStream);
+      console.log('🎥 Stream tracks:', remoteStream.getTracks());
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
@@ -874,7 +917,36 @@ function App() {
     // Yeni ID oluştur
     if (peer) {
       peer.destroy();
-      const newPeer = new Peer(generateId());
+      const newPeer = new Peer(generateId(), {
+        config: {
+          iceServers: [
+            {
+              urls: [
+                'stun:stun1.l.google.com:19302',
+                'stun:stun2.l.google.com:19302',
+                'stun:stun3.l.google.com:19302',
+                'stun:stun4.l.google.com:19302',
+              ]
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:80',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:443',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            },
+            {
+              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+              username: 'openrelayproject',
+              credential: 'openrelayproject'
+            }
+          ]
+        },
+        debug: 2
+      });
       setPeer(newPeer);
 
       newPeer.on('open', (id) => {
