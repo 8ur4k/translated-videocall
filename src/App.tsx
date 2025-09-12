@@ -27,18 +27,24 @@ interface SpeechRecognitionErrorEvent {
 
 // Dil seçenekleri
 const languages = [
-  { code: 'tr', name: 'Türkçe' },
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Español' },
-  { code: 'fr', name: 'Français' },
-  { code: 'de', name: 'Deutsch' },
-  { code: 'it', name: 'Italiano' },
-  { code: 'pt', name: 'Português' },
-  { code: 'ru', name: 'Русский' },
-  { code: 'ja', name: '日本語' },
-  { code: 'ko', name: '한국어' },
-  { code: 'zh', name: '中文' },
-  { code: 'ar', name: 'العربية' }
+  { code: 'tr', name: '🇹🇷 Türkçe' },
+  { code: 'en', name: '🇺🇸 English' },
+  { code: 'es', name: '🇪🇸 Español' },
+  { code: 'fr', name: '🇫🇷 Français' },
+  { code: 'de', name: '🇩🇪 Deutsch' },
+  { code: 'it', name: '🇮🇹 Italiano' },
+  { code: 'pt', name: '🇧🇷 Português' },
+  { code: 'ru', name: '🇷🇺 Русский' },
+  { code: 'ja', name: '🇯🇵 日本語' },
+  { code: 'ko', name: '🇰🇷 한국어' },
+  { code: 'zh', name: '🇨🇳 中文' },
+  { code: 'ar', name: '🇸🇦 العربية' },
+  { code: 'hi', name: '🇮🇳 हिन्दी' },
+  { code: 'nl', name: '🇳🇱 Nederlands' },
+  { code: 'sv', name: '🇸🇪 Svenska' },
+  { code: 'no', name: '🇳🇴 Norsk' },
+  { code: 'da', name: '🇩🇰 Dansk' },
+  { code: 'fi', name: '🇫🇮 Suomi' }
 ];
 
 // ID oluşturucu
@@ -93,6 +99,8 @@ function App() {
   const [remoteSubtitle, setRemoteSubtitle] = useState<string>('');
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [speechEnabled, setSpeechEnabled] = useState<boolean>(true);
+  const [isCalling, setIsCalling] = useState<boolean>(false);
+  const [showCopySuccess, setShowCopySuccess] = useState<boolean>(false);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -151,7 +159,13 @@ function App() {
                            selectedLanguage === 'ja' ? 'ja-JP' :
                            selectedLanguage === 'ko' ? 'ko-KR' :
                            selectedLanguage === 'zh' ? 'zh-CN' :
-                           selectedLanguage === 'ar' ? 'ar-SA' : 'tr-TR';
+                           selectedLanguage === 'ar' ? 'ar-SA' :
+                           selectedLanguage === 'hi' ? 'hi-IN' :
+                           selectedLanguage === 'nl' ? 'nl-NL' :
+                           selectedLanguage === 'sv' ? 'sv-SE' :
+                           selectedLanguage === 'no' ? 'no-NO' :
+                           selectedLanguage === 'da' ? 'da-DK' :
+                           selectedLanguage === 'fi' ? 'fi-FI' : 'tr-TR';
               
               recognition.lang = lang;
               
@@ -364,7 +378,13 @@ function App() {
                  selectedLanguage === 'ja' ? 'ja-JP' :
                  selectedLanguage === 'ko' ? 'ko-KR' :
                  selectedLanguage === 'zh' ? 'zh-CN' :
-                 selectedLanguage === 'ar' ? 'ar-SA' : 'tr-TR';
+                 selectedLanguage === 'ar' ? 'ar-SA' :
+                 selectedLanguage === 'hi' ? 'hi-IN' :
+                 selectedLanguage === 'nl' ? 'nl-NL' :
+                 selectedLanguage === 'sv' ? 'sv-SE' :
+                 selectedLanguage === 'no' ? 'no-NO' :
+                 selectedLanguage === 'da' ? 'da-DK' :
+                 selectedLanguage === 'fi' ? 'fi-FI' : 'tr-TR';
     
     recognition.lang = lang;
     console.log('Recognition dili:', lang);
@@ -622,11 +642,14 @@ function App() {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(myId);
+    setShowCopySuccess(true);
+    setTimeout(() => setShowCopySuccess(false), 1000);
   };
 
   const callUser = () => {
     if (!peer || !localStreamRef.current || !searchId.trim()) return;
 
+    setIsCalling(true);
     const call = peer.call(searchId, localStreamRef.current);
     setCurrentCall(call);
 
@@ -635,6 +658,7 @@ function App() {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setIsConnected(true);
+      setIsCalling(false);
     });
 
     call.on('close', () => {
@@ -696,6 +720,7 @@ function App() {
     setCurrentCall(null);
     setDataConnection(null);
     setIsConnected(false);
+    setIsCalling(false);
     setMySubtitle('');
     setRemoteSubtitle('');
     
@@ -785,11 +810,11 @@ function App() {
                 <input 
                   type="text" 
                   className="id-input" 
-                  value={myId} 
+                  value={showCopySuccess ? "Kopyalandı!" : myId}
                   readOnly 
                 />
                 <button className="copy-button" onClick={copyToClipboard}>
-                  Kopyala
+                  📋
                 </button>
               </div>
             </div>
@@ -800,12 +825,13 @@ function App() {
                 <input 
                   type="text" 
                   className="search-input" 
-                  placeholder="ID girin (örn: wQi8C3h)"
-                  value={searchId}
+                  placeholder={isCalling ? "" : "ID girin (örn: wQi8C3h)"}
+                  value={isCalling ? `${searchId} Aranıyor...` : searchId}
                   onChange={(e) => setSearchId(e.target.value)}
+                  disabled={isCalling}
                 />
-                <button className="call-button" onClick={callUser}>
-                  Ara
+                <button className="call-button" onClick={callUser} disabled={isCalling}>
+                  🤙
                 </button>
               </div>
             </div>

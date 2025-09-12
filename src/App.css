@@ -98,6 +98,16 @@
   background-color: #45a049;
 }
 
+.call-button:disabled {
+  background-color: #666;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.call-button:disabled:hover {
+  background-color: #666;
+}
+
 .search-section {
   display: flex;
   gap: 10px;
@@ -113,6 +123,12 @@
   color: #fff;
   font-size: 16px;
   font-family: monospace;
+}
+
+.search-input:disabled {
+  background-color: #555;
+  color: #aaa;
+  cursor: not-allowed;
 }
 
 /* Call Controls */
