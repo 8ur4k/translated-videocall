@@ -100,6 +100,7 @@ function App() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [speechEnabled, setSpeechEnabled] = useState<boolean>(true);
   const [isCalling, setIsCalling] = useState<boolean>(false);
+  const [callStatus, setCallStatus] = useState<string>(''); // 'calling', 'rejected', ''
   const [showCopySuccess, setShowCopySuccess] = useState<boolean>(false);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -563,6 +564,14 @@ function App() {
         console.log('Gelen veri:', data);
         if (data.type === 'subtitle') {
           handleIncomingSubtitle(data.text, data.language, data.isFinal);
+        } else if (data.type === 'call_rejected') {
+          console.log('Arama reddedildi!');
+          setCallStatus('rejected');
+          setIsCalling(true); // Input disabled kalsın
+          setTimeout(() => {
+            setIsCalling(false);
+            setCallStatus('');
+          }, 1000);
         }
       });
     });
@@ -650,6 +659,8 @@ function App() {
     if (!peer || !localStreamRef.current || !searchId.trim()) return;
 
     setIsCalling(true);
+    setCallStatus('calling');
+    const callStartTime = Date.now();
     const call = peer.call(searchId, localStreamRef.current);
     setCurrentCall(call);
 
@@ -659,10 +670,30 @@ function App() {
       }
       setIsConnected(true);
       setIsCalling(false);
+      setCallStatus('');
     });
 
     call.on('close', () => {
-      endCall();
+      // Eğer bağlı durumda ise normal kapatma
+      if (isConnected) {
+        endCall();
+      } else {
+        // Hızlı close (500ms içinde) reddetme anlamına gelir
+        const callDuration = Date.now() - callStartTime;
+        if (callDuration < 500) {
+          console.log('Hızlı close - reddetme olarak yorumlanıyor');
+          setCallStatus('rejected');
+          setIsCalling(true); // Input disabled kalsın
+          setTimeout(() => {
+            setIsCalling(false);
+            setCallStatus('');
+          }, 1000);
+        } else {
+          // Normal timeout veya iptal
+          setIsCalling(false);
+          setCallStatus('');
+        }
+      }
     });
 
     // Data connection oluştur
@@ -678,6 +709,14 @@ function App() {
       console.log('Gelen veri (caller):', data);
       if (data.type === 'subtitle') {
         handleIncomingSubtitle(data.text, data.language, data.isFinal);
+      } else if (data.type === 'call_rejected') {
+        console.log('Arama reddedildi!');
+        setCallStatus('rejected');
+        setIsCalling(true); // Input disabled kalsın
+        setTimeout(() => {
+          setIsCalling(false);
+          setCallStatus('');
+        }, 1000);
       }
     });
   };
@@ -704,7 +743,34 @@ function App() {
 
   const rejectCall = () => {
     if (incomingCall) {
-      incomingCall.close();
+      // Reddetme sinyali göndermek için call'ı kısa süre answer edip hemen kapat
+      try {
+        // Boş bir stream ile answer et (sadece sinyal için)
+        const emptyStream = new MediaStream();
+        incomingCall.answer(emptyStream);
+        
+        // Hemen kapat (bu arayan tarafa close sinyali gönderir)
+        setTimeout(() => {
+          incomingCall.close();
+        }, 100);
+        
+        // Ayrıca data connection ile de reddetme mesajı gönder
+        if (peer) {
+          const rejectConnection = peer.connect(incomingCall.peer);
+          rejectConnection.on('open', () => {
+            rejectConnection.send({
+              type: 'call_rejected'
+            });
+            setTimeout(() => {
+              rejectConnection.close();
+            }, 100);
+          });
+        }
+      } catch (error) {
+        console.log('Reddetme sinyali gönderme hatası:', error);
+        incomingCall.close();
+      }
+      
       setIncomingCall(null);
     }
   };
@@ -721,6 +787,7 @@ function App() {
     setDataConnection(null);
     setIsConnected(false);
     setIsCalling(false);
+    setCallStatus('');
     setMySubtitle('');
     setRemoteSubtitle('');
     
@@ -768,6 +835,14 @@ function App() {
         conn.on('data', (data: any) => {
           if (data.type === 'subtitle') {
             handleIncomingSubtitle(data.text, data.language, data.isFinal);
+          } else if (data.type === 'call_rejected') {
+            console.log('Arama reddedildi!');
+            setCallStatus('rejected');
+            setIsCalling(true); // Input disabled kalsın
+            setTimeout(() => {
+              setIsCalling(false);
+              setCallStatus('');
+            }, 1000);
           }
         });
       });
@@ -826,7 +901,11 @@ function App() {
                   type="text" 
                   className="search-input" 
                   placeholder={isCalling ? "" : "ID girin (örn: wQi8C3h)"}
-                  value={isCalling ? `${searchId} Aranıyor...` : searchId}
+                  value={
+                    callStatus === 'calling' ? `${searchId} Aranıyor...` :
+                    callStatus === 'rejected' ? `${searchId} Reddetti.` :
+                    searchId
+                  }
                   onChange={(e) => setSearchId(e.target.value)}
                   disabled={isCalling}
                 />
