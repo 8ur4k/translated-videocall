@@ -572,6 +572,10 @@ function App() {
             setIsCalling(false);
             setCallStatus('');
           }, 1000);
+        } else if (data.type === 'call_cancelled') {
+          console.log('Arama iptal edildi!');
+          // Gelen arama bildirimini kaldır
+          setIncomingCall(null);
         }
       });
     });
@@ -717,6 +721,10 @@ function App() {
           setIsCalling(false);
           setCallStatus('');
         }, 1000);
+      } else if (data.type === 'call_cancelled') {
+        console.log('Arama iptal edildi!');
+        // Gelen arama bildirimini kaldır
+        setIncomingCall(null);
       }
     });
   };
@@ -772,6 +780,31 @@ function App() {
       }
       
       setIncomingCall(null);
+    }
+  };
+
+  const cancelCall = () => {
+    if (currentCall && !isConnected) {
+      console.log('Arama iptal ediliyor...');
+      
+      // Karşı tarafa iptal mesajı gönder
+      if (peer && searchId) {
+        const cancelConnection = peer.connect(searchId);
+        cancelConnection.on('open', () => {
+          cancelConnection.send({
+            type: 'call_cancelled'
+          });
+          setTimeout(() => {
+            cancelConnection.close();
+          }, 100);
+        });
+      }
+      
+      // Call'ı kapat
+      currentCall.close();
+      setCurrentCall(null);
+      setIsCalling(false);
+      setCallStatus('');
     }
   };
 
@@ -843,6 +876,10 @@ function App() {
               setIsCalling(false);
               setCallStatus('');
             }, 1000);
+          } else if (data.type === 'call_cancelled') {
+            console.log('Arama iptal edildi!');
+            // Gelen arama bildirimini kaldır
+            setIncomingCall(null);
           }
         });
       });
@@ -909,8 +946,11 @@ function App() {
                   onChange={(e) => setSearchId(e.target.value)}
                   disabled={isCalling}
                 />
-                <button className="call-button" onClick={callUser} disabled={isCalling}>
-                  🤙
+                <button 
+                  className={isCalling ? "call-button calling" : "call-button"} 
+                  onClick={isCalling ? cancelCall : callUser}
+                  disabled={false}
+                >
                 </button>
               </div>
             </div>

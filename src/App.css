@@ -108,6 +108,26 @@
   background-color: #666;
 }
 
+.call-button::after {
+  content: "🤙";
+  display: inline-block;
+  transform: rotate(0deg);
+  transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.call-button.calling {
+  background-color: #f44336;
+  transition: background-color 0.3s ease;
+}
+
+.call-button.calling:hover {
+  background-color: #da190b;
+}
+
+.call-button.calling::after {
+  transform: rotate(90deg);
+}
+
 .search-section {
   display: flex;
   gap: 10px;
