@@ -182,17 +182,24 @@
 .subtitles {
   position: absolute;
   bottom: 20px;
-  left: 20px;
-  right: 20px;
-  background-color: rgba(0, 0, 0, 0.7);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
   color: white;
-  padding: 10px 15px;
-  border-radius: 8px;
-  font-size: 16px;
+  padding: 15px 20px;
+  border-radius: 12px;
+  font-size: 22px;
   line-height: 1.4;
   text-align: center;
-  max-height: 100px;
+  max-height: 150px;
+  max-width: calc(100% - 40px);
+  width: fit-content;
+  min-width: 100px;
   overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  backdrop-filter: blur(5px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
   animation: subtitleFadeIn 0.3s ease-in-out;
 }
@@ -200,17 +207,17 @@
 @keyframes subtitleFadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateX(-50%) translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(-50%) translateY(0);
   }
 }
 
 .subtitles.fading-out {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateX(-50%) translateY(10px);
 }
 
 /* Incoming Call Indicator */
@@ -219,18 +226,29 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #fff;
-  font-size: 18px;
+  background-color: rgba(0, 0, 0, 0.9);
+  padding: 30px;
+  border-radius: 15px;
   text-align: center;
-  background-color: rgba(0, 0, 0, 0.8);
-  padding: 20px;
-  border-radius: 10px;
+  min-width: 300px;
 }
 
-/* Status Messages */
-.status-message {
+.caller-id {
   color: #fff;
+  font-size: 24px;
+  font-weight: bold;
+  font-family: monospace;
+  margin-bottom: 10px;
+}
+
+.call-status {
+  color: #ccc;
   font-size: 16px;
-  text-align: center;
-  margin-top: 10px;
+  margin-bottom: 20px;
+}
+
+.call-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
 }

@@ -92,7 +92,6 @@ function App() {
   const [mySubtitle, setMySubtitle] = useState<string>('');
   const [remoteSubtitle, setRemoteSubtitle] = useState<string>('');
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [status, setStatus] = useState<string>('');
   const [speechEnabled, setSpeechEnabled] = useState<boolean>(true);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -111,6 +110,8 @@ function App() {
   const remoteLastUpdateTime = useRef<number>(0);
   const myPreviousText = useRef<string>(''); // Önceki metni takip et
   const remotePreviousText = useRef<string>('');
+  const lastFinalText = useRef<string>(''); // Son final metin
+  const pendingInterimText = useRef<string>(''); // Bekleyen interim metin
 
   // SpeechRecognition yeniden başlatma fonksiyonu
   const restartSpeechRecognition = useCallback(() => {
@@ -253,19 +254,27 @@ function App() {
       myCurrentText.current = '';
       myPreviousText.current = '';
       myLastUpdateTime.current = 0;
+      lastFinalText.current = '';
+      pendingInterimText.current = '';
       
       // SpeechRecognition'ı yeniden başlat (hafızasını temizlemek için)
       restartSpeechRecognition();
     }, 5000);
   }, [restartSpeechRecognition]);
 
-  const updateRemoteSubtitle = useCallback(async (newText: string, sourceLang: string) => {
-    console.log('📨 Karşı taraf yeni metin geldi:', newText);
+  const updateRemoteSubtitle = useCallback(async (newText: string, sourceLang: string, isFinal?: boolean) => {
+    console.log('📨 Karşı taraf yeni metin geldi:', newText, 'Final:', isFinal);
     
-    // Eğer yeni metin önceki metinle aynı ise (tekrar), işleme
-    if (newText === remotePreviousText.current) {
-      console.log('🔄 Karşı taraf aynı metin tekrar geldi, işlenmiyor');
-      return;
+    // Final mesajları öncelikli olarak işle
+    if (isFinal) {
+      console.log('🎯 Final metin işleniyor:', newText);
+      // Final metin geldiğinde kesinlikle işle
+    } else {
+      // Interim mesajlarda aynı metin kontrolü yap
+      if (newText === remotePreviousText.current) {
+        console.log('🔄 Karşı taraf aynı interim metin tekrar geldi, işlenmiyor');
+        return;
+      }
     }
     
     // Her zaman yeni metni olduğu gibi çevir (karşı taraftan gelen zaten birikimli)
@@ -288,14 +297,17 @@ function App() {
         clearTimeout(remoteSubtitleTimer.current);
       }
       
-      // 5 saniye sonra altyazıyı kaldır
+      // Final mesajlarda timer'ı biraz uzat (daha uzun görünsün)
+      const timeoutDuration = isFinal ? 7000 : 5000;
+      
+      // Timer ile altyazıyı kaldır
       remoteSubtitleTimer.current = setTimeout(() => {
-        console.log('🫥 Karşı taraf 5 saniye sessizlik - altyazı kayboldu');
+        console.log('🫥 Karşı taraf sessizlik - altyazı kayboldu');
         setRemoteSubtitle('');
         remoteCurrentText.current = '';
         remotePreviousText.current = '';
         remoteLastUpdateTime.current = 0;
-      }, 5000);
+      }, timeoutDuration);
     } catch (error) {
       console.error('Çeviri hatası:', error);
       setRemoteSubtitle(getLastNWords(newText));
@@ -303,9 +315,9 @@ function App() {
   }, [selectedLanguage]);
 
   // Callback fonksiyonları
-  const handleIncomingSubtitle = useCallback(async (text: string, sourceLang: string) => {
-    console.log('📨 Gelen metin:', text, 'Kaynak dil:', sourceLang, 'Hedef dil:', selectedLanguage);
-    updateRemoteSubtitle(text, sourceLang);
+  const handleIncomingSubtitle = useCallback(async (text: string, sourceLang: string, isFinal?: boolean) => {
+    console.log('📨 Gelen metin:', text, 'Kaynak dil:', sourceLang, 'Hedef dil:', selectedLanguage, 'Final:', isFinal);
+    updateRemoteSubtitle(text, sourceLang, isFinal);
   }, [selectedLanguage, updateRemoteSubtitle]);
 
   const startSpeechRecognition = useCallback(() => {
@@ -365,36 +377,58 @@ function App() {
     recognition.onresult = (event: any) => {
       console.log('🎤 onresult tetiklendi, results:', event.results.length);
       
-      // Tüm sonuçları birleştir (hem interim hem final)
-      let fullTranscript = '';
+      // Final ve interim sonuçları ayır
+      let finalTranscript = '';
+      let interimTranscript = '';
       let hasNewFinal = false;
       
       for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
-        fullTranscript += result[0].transcript;
+        const transcript = result[0].transcript;
         
-        // Yeni final sonuç var mı kontrol et
-        if (result.isFinal && i >= event.results.length - 1) {
+        if (result.isFinal) {
+          finalTranscript += transcript;
           hasNewFinal = true;
+        } else {
+          interimTranscript += transcript;
         }
       }
       
-      console.log('🗣️ Tam metin:', fullTranscript, 'Yeni final:', hasNewFinal);
+      const fullTranscript = finalTranscript + interimTranscript;
+      console.log('🗣️ Final:', finalTranscript, 'Interim:', interimTranscript, 'Yeni final:', hasNewFinal);
       
       if (fullTranscript.trim()) {
-        // Her zaman güncel metni göster (interim + final)
+        // Her zaman güncel metni göster (final + interim)
         updateMySubtitle(fullTranscript);
         
-        // Veriyi karşı tarafa sürekli gönder (gerçek zamanlı)
-        if (dataConnection && dataConnection.open) {
-          console.log('📤 Veri gönderiliyor:', fullTranscript);
-          dataConnection.send({
-            type: 'subtitle',
-            text: fullTranscript,
-            language: selectedLanguage
-          });
-        } else {
-          console.log('❌ Data connection yok veya kapalı');
+        // Karşı tarafa gönderme stratejisi:
+        if (hasNewFinal && finalTranscript.trim()) {
+          // Yeni final sonuç varsa, onu öncelikli gönder
+          lastFinalText.current = finalTranscript;
+          pendingInterimText.current = interimTranscript;
+          
+          if (dataConnection && dataConnection.open) {
+            console.log('📤 Final veri gönderiliyor:', finalTranscript);
+            dataConnection.send({
+              type: 'subtitle',
+              text: finalTranscript,
+              language: selectedLanguage,
+              isFinal: true
+            });
+          }
+        } else if (interimTranscript.trim() && !hasNewFinal) {
+          // Sadece interim varsa ve yeni final yoksa, tam metni gönder
+          const textToSend = lastFinalText.current + interimTranscript;
+          
+          if (dataConnection && dataConnection.open) {
+            console.log('📤 Interim veri gönderiliyor:', textToSend);
+            dataConnection.send({
+              type: 'subtitle',
+              text: textToSend,
+              language: selectedLanguage,
+              isFinal: false
+            });
+          }
         }
       }
     };
@@ -488,19 +522,17 @@ function App() {
     }
   }, []);
 
-  // Peer bağlantısını başlat
+  // Peer bağlantısını başlat (sadece component mount'ta)
   useEffect(() => {
     const newPeer = new Peer(generateId());
     setPeer(newPeer);
 
     newPeer.on('open', (id) => {
       setMyId(id);
-      setStatus('Hazır');
     });
 
     newPeer.on('call', (call) => {
       setIncomingCall(call);
-      setStatus('Gelen arama...');
     });
 
     newPeer.on('connection', (conn) => {
@@ -510,7 +542,7 @@ function App() {
       conn.on('data', (data: any) => {
         console.log('Gelen veri:', data);
         if (data.type === 'subtitle') {
-          handleIncomingSubtitle(data.text, data.language);
+          handleIncomingSubtitle(data.text, data.language, data.isFinal);
         }
       });
     });
@@ -518,7 +550,7 @@ function App() {
     return () => {
       newPeer.destroy();
     };
-  }, [handleIncomingSubtitle]);
+  }, []); // handleIncomingSubtitle dependency'sini kaldırdık
 
   // Kamera başlat
   useEffect(() => {
@@ -539,7 +571,6 @@ function App() {
         }
       } catch (error) {
         console.error('Kamera erişim hatası:', error);
-        setStatus('Kamera erişim hatası');
       }
     };
 
@@ -591,8 +622,6 @@ function App() {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(myId);
-    setStatus('ID kopyalandı!');
-    setTimeout(() => setStatus('Hazır'), 2000);
   };
 
   const callUser = () => {
@@ -600,14 +629,12 @@ function App() {
 
     const call = peer.call(searchId, localStreamRef.current);
     setCurrentCall(call);
-    setStatus('Aranıyor...');
 
     call.on('stream', (remoteStream) => {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setIsConnected(true);
-      setStatus('Bağlandı');
     });
 
     call.on('close', () => {
@@ -626,7 +653,7 @@ function App() {
     conn.on('data', (data: any) => {
       console.log('Gelen veri (caller):', data);
       if (data.type === 'subtitle') {
-        handleIncomingSubtitle(data.text, data.language);
+        handleIncomingSubtitle(data.text, data.language, data.isFinal);
       }
     });
   };
@@ -642,7 +669,6 @@ function App() {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setIsConnected(true);
-      setStatus('Bağlandı');
     });
 
     incomingCall.on('close', () => {
@@ -656,8 +682,6 @@ function App() {
     if (incomingCall) {
       incomingCall.close();
       setIncomingCall(null);
-      setStatus('Arama reddedildi');
-      setTimeout(() => setStatus('Hazır'), 2000);
     }
   };
 
@@ -692,6 +716,8 @@ function App() {
     remotePreviousText.current = '';
     myLastUpdateTime.current = 0;
     remoteLastUpdateTime.current = 0;
+    lastFinalText.current = '';
+    pendingInterimText.current = '';
     
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
@@ -705,12 +731,10 @@ function App() {
 
       newPeer.on('open', (id) => {
         setMyId(id);
-        setStatus('Hazır');
       });
 
       newPeer.on('call', (call) => {
         setIncomingCall(call);
-        setStatus('Gelen arama...');
       });
 
       newPeer.on('connection', (conn) => {
@@ -718,7 +742,7 @@ function App() {
         
         conn.on('data', (data: any) => {
           if (data.type === 'subtitle') {
-            handleIncomingSubtitle(data.text, data.language);
+            handleIncomingSubtitle(data.text, data.language, data.isFinal);
           }
         });
       });
@@ -786,19 +810,22 @@ function App() {
               </div>
             </div>
 
-            {status && <div className="status-message">{status}</div>}
           </div>
         )}
 
-        {/* Gelen arama kontrolü */}
+        {/* Gelen arama göstergesi */}
         {incomingCall && (
-          <div className="call-controls">
-            <button className="accept-button" onClick={acceptCall}>
-              Kabul Et
-            </button>
-            <button className="reject-button" onClick={rejectCall}>
-              Reddet
-            </button>
+          <div className="incoming-call">
+            <div className="caller-id">{incomingCall.peer}</div>
+            <div className="call-status">sizi arıyor...</div>
+            <div className="call-actions">
+              <button className="accept-button" onClick={acceptCall}>
+                Kabul Et
+              </button>
+              <button className="reject-button" onClick={rejectCall}>
+                Reddet
+              </button>
+            </div>
           </div>
         )}
 
@@ -816,12 +843,6 @@ function App() {
           </div>
         )}
         
-        {/* Debug: Karşı taraf altyazı durumu */}
-        {isConnected && (
-          <div style={{ position: 'absolute', top: '10px', left: '10px', color: 'white', fontSize: '12px', background: 'rgba(0,0,0,0.7)', padding: '5px' }}>
-            Remote: {remoteSubtitle || 'Yok'}
-          </div>
-        )}
       </div>
 
       {/* Sağ video container (kendi videom) */}
@@ -841,25 +862,6 @@ function App() {
           </div>
         )}
         
-        {/* Debug: Altyazı durumu */}
-        {isConnected && (
-          <div style={{ position: 'absolute', top: '10px', left: '10px', color: 'white', fontSize: '12px', background: 'rgba(0,0,0,0.7)', padding: '5px' }}>
-            My: {mySubtitle || 'Yok'}<br/>
-            Speech: {speechEnabled ? '✅' : '❌'}<br/>
-            Aborted: {abortedCount.current}
-            {!speechEnabled && (
-              <button 
-                onClick={() => {
-                  setSpeechEnabled(true);
-                  abortedCount.current = 0;
-                }}
-                style={{ marginLeft: '5px', fontSize: '10px', padding: '2px 5px' }}
-              >
-                Yeniden Etkinleştir
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
