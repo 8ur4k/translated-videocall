@@ -572,39 +572,13 @@ function App() {
       config: {
         iceServers: [
           {
-            urls: [
-              'stun:stun.l.google.com:19302',
-              'stun:stun1.l.google.com:19302',
-              'stun:stun2.l.google.com:19302',
-              'stun:stun3.l.google.com:19302',
-              'stun:stun4.l.google.com:19302'
-            ]
-          },
-          {
-            urls: 'turn:relay1.expressturn.com:3478',
-            username: 'efJBIBF0YTVG2PKQAU',
-            credential: 'Bk2qzg6zmpqLlVgW'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
+            urls: 'stun:stun.l.google.com:19302'
           }
         ],
         iceTransportPolicy: 'all',
-        bundlePolicy: 'max-bundle',
+        bundlePolicy: 'max-compat',
         rtcpMuxPolicy: 'require',
-        iceCandidatePoolSize: 10
+        iceCandidatePoolSize: 0
       },
       debug: 3
     });
@@ -672,9 +646,9 @@ function App() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 640, max: 1280 },
-            height: { ideal: 480, max: 720 },
-            frameRate: { ideal: 30, max: 60 }
+            width: { ideal: 320, max: 640 },
+            height: { ideal: 240, max: 480 },
+            frameRate: { ideal: 15, max: 30 }
           },
           audio: {
             echoCancellation: true,
@@ -803,28 +777,15 @@ function App() {
       console.log('🧊 ICE connection state:', state);
       
       if (state === 'failed') {
-        console.error('❌ ICE bağlantısı başarısız! ICE restart deneniyor...');
-        // ICE restart
-        try {
-          call.peerConnection.restartIce();
-          console.log('🔄 ICE restart başlatıldı');
-        } catch (error) {
-          console.error('❌ ICE restart hatası:', error);
+        console.error('❌ ICE bağlantısı başarısız!', state);
+        // Bağlantıyı sonlandır, kullanıcı yeniden denemeli
+        setIsCalling(false);
+        setCallStatus('');
+        if (currentCall) {
+          currentCall.close();
         }
       } else if (state === 'disconnected') {
-        console.warn('⚠️ ICE bağlantısı koptu, yeniden bağlanmaya çalışıyor...');
-        // 3 saniye bekle, sonra ICE restart
-        setTimeout(() => {
-          if (call.peerConnection.iceConnectionState === 'disconnected' || 
-              call.peerConnection.iceConnectionState === 'failed') {
-            console.log('🔄 ICE restart deneniyor (disconnected)');
-            try {
-              call.peerConnection.restartIce();
-            } catch (error) {
-              console.error('❌ ICE restart hatası:', error);
-            }
-          }
-        }, 3000);
+        console.warn('⚠️ ICE bağlantısı koptu');
       } else if (state === 'connected' || state === 'completed') {
         console.log('✅ ICE bağlantısı başarılı!', state);
       }
@@ -1081,39 +1042,13 @@ function App() {
         config: {
           iceServers: [
             {
-              urls: [
-                'stun:stun.l.google.com:19302',
-                'stun:stun1.l.google.com:19302',
-                'stun:stun2.l.google.com:19302',
-                'stun:stun3.l.google.com:19302',
-                'stun:stun4.l.google.com:19302'
-              ]
-            },
-            {
-              urls: 'turn:relay1.expressturn.com:3478',
-              username: 'efJBIBF0YTVG2PKQAU',
-              credential: 'Bk2qzg6zmpqLlVgW'
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:80',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-            },
-            {
-              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
+              urls: 'stun:stun.l.google.com:19302'
             }
           ],
           iceTransportPolicy: 'all',
-          bundlePolicy: 'max-bundle',
+          bundlePolicy: 'max-compat',
           rtcpMuxPolicy: 'require',
-          iceCandidatePoolSize: 10
+          iceCandidatePoolSize: 0
         },
         debug: 3
       });
