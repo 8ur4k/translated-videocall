@@ -573,11 +573,17 @@ function App() {
         iceServers: [
           {
             urls: [
+              'stun:stun.l.google.com:19302',
               'stun:stun1.l.google.com:19302',
               'stun:stun2.l.google.com:19302',
               'stun:stun3.l.google.com:19302',
-              'stun:stun4.l.google.com:19302',
+              'stun:stun4.l.google.com:19302'
             ]
+          },
+          {
+            urls: 'turn:relay1.expressturn.com:3478',
+            username: 'efJBIBF0YTVG2PKQAU',
+            credential: 'Bk2qzg6zmpqLlVgW'
           },
           {
             urls: 'turn:openrelay.metered.ca:80',
@@ -594,9 +600,12 @@ function App() {
             username: 'openrelayproject',
             credential: 'openrelayproject'
           }
-        ]
+        ],
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
       },
-      debug: 2
+      debug: 3
     });
     setPeer(newPeer);
 
@@ -652,8 +661,17 @@ function App() {
     const startCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true
+          video: {
+            width: { ideal: 640, max: 1280 },
+            height: { ideal: 480, max: 720 },
+            frameRate: { ideal: 30, max: 60 }
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 44100
+          }
         });
         
         console.log('Kamera ve mikrofon erişimi sağlandı');
@@ -733,12 +751,36 @@ function App() {
     call.on('stream', (remoteStream) => {
       console.log('🎥 Karşı taraftan stream geldi:', remoteStream);
       console.log('🎥 Stream tracks:', remoteStream.getTracks());
+      
+      // Stream track bilgilerini detaylı logla
+      remoteStream.getTracks().forEach((track, index) => {
+        console.log(`Track ${index}:`, {
+          kind: track.kind,
+          enabled: track.enabled,
+          readyState: track.readyState,
+          settings: track.getSettings && track.getSettings()
+        });
+      });
+      
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setIsConnected(true);
       setIsCalling(false);
       setCallStatus('');
+    });
+
+    // WebRTC connection monitoring
+    call.peerConnection.addEventListener('connectionstatechange', () => {
+      console.log('🔗 Connection state:', call.peerConnection.connectionState);
+    });
+
+    call.peerConnection.addEventListener('iceconnectionstatechange', () => {
+      console.log('🧊 ICE connection state:', call.peerConnection.iceConnectionState);
+    });
+
+    call.peerConnection.addEventListener('icegatheringstatechange', () => {
+      console.log('🧊 ICE gathering state:', call.peerConnection.iceGatheringState);
     });
 
     call.on('close', () => {
@@ -922,11 +964,17 @@ function App() {
           iceServers: [
             {
               urls: [
+                'stun:stun.l.google.com:19302',
                 'stun:stun1.l.google.com:19302',
                 'stun:stun2.l.google.com:19302',
                 'stun:stun3.l.google.com:19302',
-                'stun:stun4.l.google.com:19302',
+                'stun:stun4.l.google.com:19302'
               ]
+            },
+            {
+              urls: 'turn:relay1.expressturn.com:3478',
+              username: 'efJBIBF0YTVG2PKQAU',
+              credential: 'Bk2qzg6zmpqLlVgW'
             },
             {
               urls: 'turn:openrelay.metered.ca:80',
@@ -943,9 +991,12 @@ function App() {
               username: 'openrelayproject',
               credential: 'openrelayproject'
             }
-          ]
+          ],
+          iceTransportPolicy: 'all',
+          bundlePolicy: 'max-bundle',
+          rtcpMuxPolicy: 'require'
         },
-        debug: 2
+        debug: 3
       });
       setPeer(newPeer);
 
