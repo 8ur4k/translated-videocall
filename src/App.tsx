@@ -603,7 +603,8 @@ function App() {
         ],
         iceTransportPolicy: 'all',
         bundlePolicy: 'max-bundle',
-        rtcpMuxPolicy: 'require'
+        rtcpMuxPolicy: 'require',
+        iceCandidatePoolSize: 10
       },
       debug: 3
     });
@@ -801,8 +802,29 @@ function App() {
       const state = call.peerConnection.iceConnectionState;
       console.log('🧊 ICE connection state:', state);
       
-      if (state === 'failed' || state === 'disconnected') {
-        console.error('❌ ICE bağlantısı başarısız!', state);
+      if (state === 'failed') {
+        console.error('❌ ICE bağlantısı başarısız! ICE restart deneniyor...');
+        // ICE restart
+        try {
+          call.peerConnection.restartIce();
+          console.log('🔄 ICE restart başlatıldı');
+        } catch (error) {
+          console.error('❌ ICE restart hatası:', error);
+        }
+      } else if (state === 'disconnected') {
+        console.warn('⚠️ ICE bağlantısı koptu, yeniden bağlanmaya çalışıyor...');
+        // 3 saniye bekle, sonra ICE restart
+        setTimeout(() => {
+          if (call.peerConnection.iceConnectionState === 'disconnected' || 
+              call.peerConnection.iceConnectionState === 'failed') {
+            console.log('🔄 ICE restart deneniyor (disconnected)');
+            try {
+              call.peerConnection.restartIce();
+            } catch (error) {
+              console.error('❌ ICE restart hatası:', error);
+            }
+          }
+        }, 3000);
       } else if (state === 'connected' || state === 'completed') {
         console.log('✅ ICE bağlantısı başarılı!', state);
       }
@@ -1090,7 +1112,8 @@ function App() {
           ],
           iceTransportPolicy: 'all',
           bundlePolicy: 'max-bundle',
-          rtcpMuxPolicy: 'require'
+          rtcpMuxPolicy: 'require',
+          iceCandidatePoolSize: 10
         },
         debug: 3
       });
