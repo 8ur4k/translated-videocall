@@ -632,7 +632,7 @@ function App() {
       setDataConnection(conn);
       
       conn.on('data', (data: any) => {
-        console.log('Gelen veri:', data);
+        console.log('📨 Gelen veri:', data);
         if (data.type === 'subtitle') {
           handleIncomingSubtitle(data.text, data.language, data.isFinal);
         } else if (data.type === 'call_rejected') {
@@ -647,6 +647,15 @@ function App() {
           console.log('Arama iptal edildi!');
           // Gelen arama bildirimini kaldır
           setIncomingCall(null);
+        } else if (data.type === 'connection_test') {
+          console.log('✅ Data connection test başarılı:', data.message);
+          // Test mesajına cevap gönder
+          conn.send({
+            type: 'connection_test_response',
+            message: 'Data connection test response'
+          });
+        } else if (data.type === 'connection_test_response') {
+          console.log('✅ Data connection test response alındı:', data.message);
         }
       });
     });
@@ -772,15 +781,49 @@ function App() {
 
     // WebRTC connection monitoring
     call.peerConnection.addEventListener('connectionstatechange', () => {
-      console.log('🔗 Connection state:', call.peerConnection.connectionState);
+      const state = call.peerConnection.connectionState;
+      console.log('🔗 Connection state:', state);
+      
+      if (state === 'failed' || state === 'disconnected') {
+        console.error('❌ Bağlantı başarısız!', state);
+        // Bağlantı başarısız olursa yeniden dene
+        setTimeout(() => {
+          if (!isConnected) {
+            console.log('🔄 Bağlantı yeniden deneniyor...');
+            setCallStatus('');
+            setIsCalling(false);
+          }
+        }, 2000);
+      }
     });
 
     call.peerConnection.addEventListener('iceconnectionstatechange', () => {
-      console.log('🧊 ICE connection state:', call.peerConnection.iceConnectionState);
+      const state = call.peerConnection.iceConnectionState;
+      console.log('🧊 ICE connection state:', state);
+      
+      if (state === 'failed' || state === 'disconnected') {
+        console.error('❌ ICE bağlantısı başarısız!', state);
+      } else if (state === 'connected' || state === 'completed') {
+        console.log('✅ ICE bağlantısı başarılı!', state);
+      }
     });
 
     call.peerConnection.addEventListener('icegatheringstatechange', () => {
       console.log('🧊 ICE gathering state:', call.peerConnection.iceGatheringState);
+    });
+
+    // ICE candidate events
+    call.peerConnection.addEventListener('icecandidate', (event) => {
+      if (event.candidate) {
+        console.log('🧊 ICE candidate:', event.candidate.type, event.candidate.protocol);
+      } else {
+        console.log('🧊 ICE gathering tamamlandı');
+      }
+    });
+
+    // Data channel monitoring
+    call.peerConnection.addEventListener('datachannel', (event) => {
+      console.log('📡 Data channel event:', event.channel.label);
     });
 
     call.on('close', () => {
@@ -807,16 +850,33 @@ function App() {
     });
 
     // Data connection oluştur
-    const conn = peer.connect(searchId);
+    const conn = peer.connect(searchId, {
+      reliable: true,
+      serialization: 'json'
+    });
     console.log('Data connection oluşturuluyor:', searchId);
     
     conn.on('open', () => {
-      console.log('Data connection açıldı');
+      console.log('✅ Data connection açıldı');
       setDataConnection(conn);
+      
+      // Test mesajı gönder
+      conn.send({
+        type: 'connection_test',
+        message: 'Data connection test'
+      });
+    });
+
+    conn.on('error', (error) => {
+      console.error('❌ Data connection hatası:', error);
+    });
+
+    conn.on('close', () => {
+      console.log('🔌 Data connection kapandı');
     });
 
     conn.on('data', (data: any) => {
-      console.log('Gelen veri (caller):', data);
+      console.log('📨 Gelen veri (caller):', data);
       if (data.type === 'subtitle') {
         handleIncomingSubtitle(data.text, data.language, data.isFinal);
       } else if (data.type === 'call_rejected') {
@@ -831,6 +891,15 @@ function App() {
         console.log('Arama iptal edildi!');
         // Gelen arama bildirimini kaldır
         setIncomingCall(null);
+      } else if (data.type === 'connection_test') {
+        console.log('✅ Data connection test başarılı:', data.message);
+        // Test mesajına cevap gönder
+        conn.send({
+          type: 'connection_test_response',
+          message: 'Data connection test response'
+        });
+      } else if (data.type === 'connection_test_response') {
+        console.log('✅ Data connection test response alındı:', data.message);
       }
     });
   };
@@ -844,8 +913,35 @@ function App() {
     incomingCall.on('stream', (remoteStream) => {
       console.log('🎥 Gelen aramadan stream geldi:', remoteStream);
       console.log('🎥 Stream tracks:', remoteStream.getTracks());
+      
+      // Stream track bilgilerini detaylı logla
+      remoteStream.getTracks().forEach((track, index) => {
+        console.log(`Track ${index}:`, {
+          kind: track.kind,
+          enabled: track.enabled,
+          readyState: track.readyState,
+          settings: track.getSettings && track.getSettings()
+        });
+        
+        // Track events
+        track.onended = () => console.log(`❌ Track ${index} (${track.kind}) ended`);
+        track.onmute = () => console.log(`🔇 Track ${index} (${track.kind}) muted`);
+        track.onunmute = () => console.log(`🔊 Track ${index} (${track.kind}) unmuted`);
+      });
+      
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
+        
+        // Video element events
+        remoteVideoRef.current.onloadedmetadata = () => {
+          console.log('📹 Video metadata yüklendi');
+        };
+        remoteVideoRef.current.oncanplay = () => {
+          console.log('▶️ Video oynatmaya hazır');
+        };
+        remoteVideoRef.current.onerror = (e) => {
+          console.error('❌ Video element hatası:', e);
+        };
       }
       setIsConnected(true);
     });
